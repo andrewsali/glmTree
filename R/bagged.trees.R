@@ -17,10 +17,13 @@ bagged.trees <- function(model.formula,input.data,weights,nTrees=15) {
 }
 
 predMatrix <- function(fitted.trees,input.data,sparse=FALSE) {
+  print("Using sparse:")
+  print(sparse)
   if (!sparse) {
     X <- matrix(0,nrow(input.data),fitted.trees$nUnique)
   } else {
-    X <- Matrix(0,nrow(input.data),fitted.trees$nUnique,sparse=TRUE)
+    #X <- Matrix(0,nrow(input.data),fitted.trees$nUnique,sparse=TRUE)
+    x <- rep(0,nrow(input.data) * length(fitted.trees$fitted.trees))
   }
   currInd <- 1
   for (nn in 1:length(fitted.trees$fitted.trees)) {
@@ -30,11 +33,16 @@ predMatrix <- function(fitted.trees,input.data,sparse=FALSE) {
     if (!sparse) {
       X[,seq(currInd,currInd+length(levels(predicted.class))-1)] <- model.matrix(~-1+.,data=data.frame(class=predicted.class))
     } else {
-      X[,seq(currInd,currInd+length(levels(predicted.class))-1)] <- model.Matrix(~-1+.,data=data.frame(class=predicted.class),sparse=TRUE)
+        x[seq((nn-1)*nrow(input.data)+1,nn*nrow(input.data))] <- currInd+as.integer(predicted.class)-1
+    #  X[,seq(currInd,currInd+length(levels(predicted.class))-1)] <- model.Matrix(~-1+.,data=data.frame(class=predicted.class),sparse=TRUE)
     }
     currInd <- currInd + length(levels(predicted.class))
   }
   print(c(currInd,fitted.trees$nUnique))
+  if (sparse) {
+    X <- sparseMatrix(rep(1:nrow(input.data),times=length(fitted.trees$fitted.trees)),x)
+    print(dim(X))
+  }
   return(X)
 }
 
@@ -46,7 +54,7 @@ glmTree <- function(model.formula,input.data,weights,sparse=FALSE,nTrees=15) {
   fitted.trees <- bagged.trees(model.formula,input.data,weights = weights,nTrees = nTrees)
 
   y <- input.data[,as.character(model.formula)[2]]
-  X <- predMatrix(fitted.trees,input.data)
+  X <- predMatrix(fitted.trees,input.data,sparse=sparse)
   model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=.5,weights = weights)
   plot(model.fit)
   fitStruct <- list(model=model.fit,fitted.trees=fitted.trees)
