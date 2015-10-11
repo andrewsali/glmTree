@@ -10,7 +10,7 @@ bagged.trees <- function(model.formula,input.data,weights,nTrees=15) {
     sample.ind <- sample(1:N,replace = TRUE)
     bagged.data <- input.data[sample.ind,]
     weights.loc <<- weights[sample.ind]
-    fitted.trees[[nn]] <- rpart(model.formula,bagged.data,control = rpart.control(minsplit=round(N/nn),xval=0,cp=0),weights=weights.loc)
+    fitted.trees[[nn]] <- rpart(model.formula,bagged.data,control = rpart.control(minsplit=round(N/nn^2),xval=0,cp=0),weights=weights.loc)
     nUnique <- nUnique + length(unique(fitted.trees[[nn]]$where))
   }
   return(list(fitted.trees=fitted.trees,nUnique=nUnique))
