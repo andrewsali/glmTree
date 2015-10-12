@@ -1,7 +1,7 @@
 #' Generate a sequence of bagged trees
 #' @param model.formula
 #' @param input.data
-bagged.trees <- function(model.formula,input.data,weights,nTrees=15) {
+bagged.trees <- function(model.formula,input.data,weights,nTrees=round(log2(nrow(input.data))-3)) {
   N <- nrow(input.data)
   fitted.trees <- list()
   nUnique <- 0
@@ -10,13 +10,13 @@ bagged.trees <- function(model.formula,input.data,weights,nTrees=15) {
     sample.ind <- sample(1:N,replace = TRUE)
     bagged.data <- input.data[sample.ind,]
     weights.loc <<- weights[sample.ind]
-    fitted.trees[[nn]] <- rpart(model.formula,bagged.data,control = rpart.control(minsplit=round(N/nn^2),xval=0,cp=0),weights=weights.loc)
+    fitted.trees[[nn]] <- rpart(model.formula,bagged.data,control = rpart.control(minsplit=round(N/2^nn),xval=0,cp=0),weights=weights.loc)
     nUnique <- nUnique + length(unique(fitted.trees[[nn]]$where))
   }
   return(list(fitted.trees=fitted.trees,nUnique=nUnique))
 }
 
-predMatrix <- function(fitted.trees,input.data,sparse=FALSE) {
+predMatrix <- function(fitted.trees,input.data,sparse=TRUE) {
   print("Using sparse:")
   print(sparse)
   if (!sparse) {
@@ -40,14 +40,14 @@ predMatrix <- function(fitted.trees,input.data,sparse=FALSE) {
   }
   print(c(currInd,fitted.trees$nUnique))
   if (sparse) {
-    X <- sparseMatrix(rep(1:nrow(input.data),times=length(fitted.trees$fitted.trees)),x)
+    X <- sparseMatrix(rep(1:nrow(input.data),times=length(fitted.trees$fitted.trees)),x,dims=c(nrow(input.data),fitted.trees$nUnique))
     print(dim(X))
   }
   return(X)
 }
 
-predict.glmTree <- function(fitStruct,newdata){
-  return(predict(fitStruct$model,newx=predMatrix(fitStruct$fitted.trees,newdata)))
+predict.glmTree <- function(fitStruct,newdata,s="lambda.1se"){
+  return(predict(fitStruct$model,newx=predMatrix(fitStruct$fitted.trees,newdata,sparse=TRUE),s=s))
 }
 
 glmTree <- function(model.formula,input.data,weights,sparse=FALSE,nTrees=15) {
