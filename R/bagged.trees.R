@@ -11,7 +11,8 @@ bagged.trees <- function(model.formula,input.data,weights,nTrees,log.base=2) {
     sample.ind <- sample(1:N,replace = TRUE)
     bagged.data <- input.data[sample.ind,]
     weights.loc <<- weights[sample.ind]
-    fitted.trees[[nn]] <- rpart(model.formula,bagged.data,control = rpart.control(minsplit=round(N/log.base^nn),xval=0,cp=0),weights=weights.loc)
+    rpart.contr <- rpart.control(minsplit=round(N/log.base^nn),xval=0,cp=0)
+    fitted.trees[[nn]] <- rpart(model.formula,bagged.data,control = rpart.contr,weights=weights.loc,cost=runif(ncol(bagged.data)-1))
     nUnique <- nUnique + length(unique(fitted.trees[[nn]]$where))
   }
   return(list(fitted.trees=fitted.trees,nUnique=nUnique))
@@ -51,14 +52,14 @@ predict.glmTree <- function(fitStruct,newdata,s="lambda.1se"){
   return(predict(fitStruct$model,newx=predMatrix(fitStruct$fitted.trees,newdata,sparse=TRUE),s=s))
 }
 
-glmTree <- function(model.formula,input.data,weights,sparse=FALSE,log.base=1.5,nTrees=round(logb(nrow(input.data),log.base)-logb(40,log.base)),seed=1) {
+glmTree <- function(model.formula,input.data,weights,sparse=FALSE,log.base=1.5,nTrees=floor(logb(nrow(input.data),log.base)-logb(20,log.base)),seed=1,alpha=1) {
   set.seed(seed)
   fitted.trees <- bagged.trees(model.formula,input.data,weights = weights,nTrees = nTrees,log.base=log.base)
 
   y <- input.data[,as.character(model.formula)[2]]
   X <- predMatrix(fitted.trees,input.data,sparse=sparse)
   glmnet.control(eps=1e-8)
-  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=0,weights = weights,lambda.min.ratio=1e-8)
+  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = weights,lambda.min.ratio=1e-8)
   plot(model.fit)
   fitStruct <- list(model=model.fit,fitted.trees=fitted.trees)
   class(fitStruct) <- "glmTree"
