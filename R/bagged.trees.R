@@ -10,11 +10,12 @@ bagged.trees <- function(model.formula,input.data,nTrees,log.base=2,bagged.trees
     setTxtProgressBar(pb,nn-1)
     #sample.ind <- sample(1:N,replace = FALSE)
     #bagged.data <- input.data[sample.ind,]
-    rpart.contr <- rpart.control(minsplit=round(N/log.base^nn),xval=0,cp=0,surrogatestyle=1)
+    rpart.contr <- rpart.control(minsplit=round(N/log.base^nn),xval=0,cp=0,maxsurrogate=6)
     #rpart.contr <- rpart.control(maxdepth=nn,xval=0,cp=0)
     curr.tree <- rpart(model.formula,input.data,control = rpart.contr,weights=w,cost=runif(ncol(input.data)-2))
     bagged.trees$fitted.trees[[length(bagged.trees$fitted.trees)+1]] <- curr.tree
-    bagged.trees$nUnique <- bagged.trees$nUnique + length(unique(curr.tree$where))
+    #bagged.trees$nUnique <- bagged.trees$nUnique + length(unique(curr.tree$where))
+    bagged.trees$nUnique <- bagged.trees$nUnique + nrow(curr.tree$frame)
   }
   close(pb)
   bagged.trees$nRuns <- bagged.trees$nRuns+1
@@ -31,7 +32,8 @@ predMatrix <- function(bagged.trees,input.data,sparse=TRUE,isNewData=FALSE) {
   for (nn in 1:length(bagged.trees$fitted.trees)) {
     setTxtProgressBar(pb,nn-1)
     if (isNewData) {
-      predicted.class <- factor(rpart.predict.leaves(bagged.trees$fitted.trees[[nn]],input.data),levels=levels(factor(bagged.trees$fitted.trees[[nn]]$where)))
+      #predicted.class <- factor(rpart.predict.leaves(bagged.trees$fitted.trees[[nn]],input.data),levels=levels(factor(bagged.trees$fitted.trees[[nn]]$where)))
+      predicted.class <- factor(rpart.predict.leaves(bagged.trees$fitted.trees[[nn]],input.data),levels=1:nrow(bagged.trees$fitted.trees[[nn]]$frame))
     }  else {
       predicted.class <- factor(bagged.trees$fitted.trees[[nn]]$where)
     }
@@ -53,17 +55,18 @@ glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nT
   cat("Doing iteration:",fitStruct$nRuns+1)
   glmnet.control(eps=1e-9)
 
-  bagged.trees <- bagged.trees(model.formula,input.data,nTrees = nTrees,log.base=log.base)
+  struct.int <- sample(1:nrow(input.data),size=round(nrow(input.data)/4),replace = FALSE)
+  bagged.trees <- bagged.trees(model.formula,input.data[struct.int,],nTrees = nTrees,log.base=log.base)
 
-  y <- input.data[,as.character(model.formula)[2]]
-  X <- predMatrix(bagged.trees,input.data,sparse=TRUE)
+  y <- input.data[-struct.int,as.character(model.formula)[2]]
+  X <- predMatrix(bagged.trees,input.data[-struct.int,],sparse=TRUE,isNewData = TRUE)
   X.new <- predMatrix(bagged.trees,pred.data,sparse=TRUE,isNewData = TRUE)
 
   if (!is.null(fitStruct$X)) {
     X <- cBind(fitStruct$X,X)
     X.new <- cBind(fitStruct$X.new,X.new)
   }
-  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w,lambda.min.ratio=1e-9,thresh=1e-5,nlambda=10)
+  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,thresh=1e-6,nlambda=20)
   plot(model.fit)
 
   # creating predictions
