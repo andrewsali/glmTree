@@ -1,20 +1,16 @@
 #' Generate a sequence of bagged trees
 #' @param model.formula
 #' @param input.data
-bagged.trees <- function(model.formula,input.data,nTrees,log.base=2,bagged.trees = list(fitted.trees = list(),nUnique=0,nRuns=0)) {
+bagged.trees <- function(model.formula,input.data,nTrees,log.base=2,bagged.trees = list(fitted.trees = list(),nUnique=0,nRuns=0),offset=0) {
   print(c(nTrees,log.base))
   N <- nrow(input.data)
   print("Fitting trees:")
   pb <- txtProgressBar(max=nTrees-1,style=3)
   for (nn in 1:nTrees) {
     setTxtProgressBar(pb,nn-1)
-    #sample.ind <- sample(1:N,replace = FALSE)
-    #bagged.data <- input.data[sample.ind,]
-    rpart.contr <- rpart.control(minsplit=round(N/log.base^nn),xval=0,cp=0,maxsurrogate=6)
-    #rpart.contr <- rpart.control(maxdepth=nn,xval=0,cp=0)
-    curr.tree <- rpart(model.formula,input.data,control = rpart.contr,weights=w,cost=runif(ncol(input.data)-2))
+    rpart.contr <- rpart.control(minsplit=max(3,round(N/log.base^nn)),xval=0,cp=0,maxsurrogate=6)
+    curr.tree <- rpart(model.formula,input.data,control = rpart.contr,weights=w,cost=offset+runif(ncol(input.data)-2))
     bagged.trees$fitted.trees[[length(bagged.trees$fitted.trees)+1]] <- curr.tree
-    #bagged.trees$nUnique <- bagged.trees$nUnique + length(unique(curr.tree$where))
     bagged.trees$nUnique <- bagged.trees$nUnique + nrow(curr.tree$frame)
   }
   close(pb)
@@ -50,15 +46,20 @@ predMatrix <- function(bagged.trees,input.data,sparse=TRUE,isNewData=FALSE) {
   return(X)
 }
 
-glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nTrees=floor(logb(nrow(input.data),log.base)-logb(20,log.base)),seed=1,alpha=0,fitStruct=list(nRuns=0),pred.data,s="lambda.min") {
+glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nTrees=floor(logb(nrow(input.data),log.base)-logb(20,log.base)),seed=1,alpha=0,fitStruct=list(nRuns=0),pred.data,s="lambda.min",offset=0,p=1/5) {
   set.seed(seed)
   cat("Doing iteration:",fitStruct$nRuns+1)
   glmnet.control(eps=1e-9)
-
-  struct.int <- sample(1:nrow(input.data),size=round(nrow(input.data)/4),replace = FALSE)
-  bagged.trees <- bagged.trees(model.formula,input.data[struct.int,],nTrees = nTrees,log.base=log.base)
+  struct.int <- createDataPartition(input.data$Sales, p = p,
+                                    list = FALSE,
+                                    times = 1)
+  print(length(struct.int))
 
   y <- input.data[-struct.int,as.character(model.formula)[2]]
+  foldId <- createFolds(y,k=10,list=FALSE)
+
+  bagged.trees <- bagged.trees(model.formula,input.data[struct.int,],nTrees = nTrees,log.base=log.base,offset=offset)
+
   X <- predMatrix(bagged.trees,input.data[-struct.int,],sparse=TRUE,isNewData = TRUE)
   X.new <- predMatrix(bagged.trees,pred.data,sparse=TRUE,isNewData = TRUE)
 
@@ -66,12 +67,14 @@ glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nT
     X <- cBind(fitStruct$X,X)
     X.new <- cBind(fitStruct$X.new,X.new)
   }
-  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,thresh=1e-6,nlambda=20)
+
+  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,nlambda=20,foldid = foldId)
   plot(model.fit)
 
   # creating predictions
-  fitStruct <- list(input.predict = predict(model.fit,newx=X,s=s)[,1], new.predict = predict(model.fit,newx=X.new,s=s)[,1],nRuns = fitStruct$nRuns+1)
+  fitStruct <- list(input.predict = predict(model.fit,newx=X,s=s)[,1], new.predict = predict(model.fit,newx=X.new,s=s)[,1],nRuns = fitStruct$nRuns+1,cv=approx(model.fit$lambda,model.fit$cvm,c(model.fit$lambda.min,model.fit$lambda.1se))$y)
   class(fitStruct) <- "glmTree"
-
+  print("Optimal x-val value:")
+  print(fitStruct$cv)
   return(fitStruct)
 }
