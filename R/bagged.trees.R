@@ -31,7 +31,7 @@ predMatrix <- function(bagged.trees,input.data,sparse=TRUE,isNewData=FALSE) {
       #predicted.class <- factor(rpart.predict.leaves(bagged.trees$fitted.trees[[nn]],input.data),levels=levels(factor(bagged.trees$fitted.trees[[nn]]$where)))
       predicted.class <- factor(rpart.predict.leaves(bagged.trees$fitted.trees[[nn]],input.data),levels=1:nrow(bagged.trees$fitted.trees[[nn]]$frame))
     }  else {
-      predicted.class <- factor(bagged.trees$fitted.trees[[nn]]$where)
+      predicted.class <- factor(bagged.trees$fitted.trees[[nn]]$where,levels=1:nrow(bagged.trees$fitted.trees[[nn]]$frame))
     }
     if (sum(is.na(predicted.class))>0) { browser()}
     x[seq((nn-1)*nrow(input.data)+1,nn*nrow(input.data))] <- currInd+as.integer(predicted.class)-1
@@ -46,7 +46,7 @@ predMatrix <- function(bagged.trees,input.data,sparse=TRUE,isNewData=FALSE) {
   return(X)
 }
 
-glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nTrees=floor(logb(nrow(input.data),log.base)-logb(20,log.base)),seed=1,alpha=0,fitStruct=list(nRuns=0),pred.data,s="lambda.min",offset=0,p=1/5) {
+glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nTrees=floor(logb(nrow(input.data),log.base)-logb(10,log.base)),seed=1,alpha=0,fitStruct=list(nRuns=0),pred.data,s="lambda.min",offset=0,p=1/10,n.vars=nrow(input.data) * p) {
   set.seed(seed)
   cat("Doing iteration:",fitStruct$nRuns+1)
   glmnet.control(eps=1e-9)
@@ -60,13 +60,18 @@ glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nT
 
   bagged.trees <- bagged.trees(model.formula,input.data[struct.int,],nTrees = nTrees,log.base=log.base,offset=offset)
 
+  # create full prediction matrix
   X <- predMatrix(bagged.trees,input.data[-struct.int,],sparse=TRUE,isNewData = TRUE)
   X.new <- predMatrix(bagged.trees,pred.data,sparse=TRUE,isNewData = TRUE)
 
-  if (!is.null(fitStruct$X)) {
-    X <- cBind(fitStruct$X,X)
-    X.new <- cBind(fitStruct$X.new,X.new)
-  }
+  # do variable selection
+  y.train <- input.data[struct.int,as.character(model.formula)[2]]
+  X.train <- predMatrix(bagged.trees,input.data[struct.int,],sparse=TRUE,isNewData = FALSE)
+  var.selection <- cv.glmnet(X.train,y.train,intercept=TRUE,standardize=FALSE,alpha=1,weights = input.data$w[struct.int],lambda.min.ratio=1e-9,nlambda=20)
+
+  best.vars <- (coef(var.selection,s=min(var.selection$lambda[var.selection$nzero < n.vars]))!=0)[-1]
+  X <- X[,best.vars]
+  X.new <- X.new[,best.vars]
 
   model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,nlambda=20,foldid = foldId)
   plot(model.fit)
