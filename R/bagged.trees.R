@@ -65,15 +65,18 @@ glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nT
   X.new <- predMatrix(bagged.trees,pred.data,sparse=TRUE,isNewData = TRUE)
 
   # do variable selection
-  y.train <- input.data[struct.int,as.character(model.formula)[2]]
-  X.train <- predMatrix(bagged.trees,input.data[struct.int,],sparse=TRUE,isNewData = FALSE)
-  var.selection <- cv.glmnet(X.train,y.train,intercept=TRUE,standardize=FALSE,alpha=1,weights = input.data$w[struct.int],lambda.min.ratio=1e-9,nlambda=20)
+  if (1>2) {
+    y.train <- input.data[struct.int,as.character(model.formula)[2]]
+    X.train <- predMatrix(bagged.trees,input.data[struct.int,],sparse=TRUE,isNewData = FALSE)
+    var.selection <- glmnet(X.train,y.train,intercept=TRUE,standardize=FALSE,alpha=1,weights = input.data$w[struct.int],lambda.min.ratio=1e-9)
 
-  best.vars <- (coef(var.selection,s=min(var.selection$lambda[var.selection$nzero < n.vars]))!=0)[-1]
-  X <- X[,best.vars]
-  X.new <- X.new[,best.vars]
-
-  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,nlambda=20,foldid = foldId)
+    best.vars <- (coef(var.selection,s=min(var.selection$lambda[var.selection$nzero < n.vars]))!=0)[-1]
+    X <- X[,best.vars]
+    X.new <- X.new[,best.vars]
+    print("Starting second phase run:")
+    print(dim(X))
+  }
+  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,nlambda=15,foldid = foldId)
   plot(model.fit)
 
   # creating predictions
