@@ -9,7 +9,7 @@ bagged.trees <- function(model.formula,input.data,nTrees,log.base=2,bagged.trees
   for (nn in 1:nTrees) {
     setTxtProgressBar(pb,nn-1)
     rpart.contr <- rpart.control(minsplit=max(3,round(N/log.base^nn)),xval=0,cp=0,maxsurrogate=6)
-    curr.tree <- rpart(model.formula,input.data,control = rpart.contr,weights=w,cost=offset+runif(ncol(input.data)-2))
+    curr.tree <- rpart(model.formula,input.data,control = rpart.contr,weights=w)
     bagged.trees$fitted.trees[[length(bagged.trees$fitted.trees)+1]] <- curr.tree
     bagged.trees$nUnique <- bagged.trees$nUnique + nrow(curr.tree$frame)
   }
@@ -64,20 +64,10 @@ glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nT
   X <- predMatrix(bagged.trees,input.data[-struct.int,],sparse=TRUE,isNewData = TRUE)
   X.new <- predMatrix(bagged.trees,pred.data,sparse=TRUE,isNewData = TRUE)
 
-  # do variable selection
-  if (1>2) {
-    y.train <- input.data[struct.int,as.character(model.formula)[2]]
-    X.train <- predMatrix(bagged.trees,input.data[struct.int,],sparse=TRUE,isNewData = FALSE)
-    var.selection <- glmnet(X.train,y.train,intercept=TRUE,standardize=FALSE,alpha=1,weights = input.data$w[struct.int],lambda.min.ratio=1e-9)
+  rm(bagged.trees)
 
-    best.vars <- (coef(var.selection,s=min(var.selection$lambda[var.selection$nzero < n.vars]))!=0)[-1]
-    X <- X[,best.vars]
-    X.new <- X.new[,best.vars]
-    print("Starting second phase run:")
-    print(dim(X))
-  }
-  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,nlambda=15,foldid = foldId)
-  plot(model.fit)
+  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,nlambda=20,foldid = foldId)
+  try(plot(model.fit))
 
   # creating predictions
   fitStruct <- list(input.predict = predict(model.fit,newx=X,s=s)[,1], new.predict = predict(model.fit,newx=X.new,s=s)[,1],nRuns = fitStruct$nRuns+1,cv=approx(model.fit$lambda,model.fit$cvm,c(model.fit$lambda.min,model.fit$lambda.1se))$y)
