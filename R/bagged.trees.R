@@ -9,7 +9,8 @@ bagged.trees <- function(model.formula,input.data,nTrees,log.base=2,bagged.trees
   for (nn in 1:nTrees) {
     setTxtProgressBar(pb,nn-1)
     rpart.contr <- rpart.control(minsplit=max(3,round(N/log.base^nn)),xval=0,cp=0,maxsurrogate=6)
-    curr.tree <- rpart(model.formula,input.data,control = rpart.contr,weights=w)
+    curr.tree <- rpart(model.formula,input.data,control = rpart.contr,weights=w,method = "poisson")
+    #curr.tree <- rpart(model.formula,input.data,control = rpart.contr,weights=w^2)
     bagged.trees$fitted.trees[[length(bagged.trees$fitted.trees)+1]] <- curr.tree
     bagged.trees$nUnique <- bagged.trees$nUnique + nrow(curr.tree$frame)
   }
@@ -66,11 +67,11 @@ glmTree <- function(model.formula,input.data,weights,sparse=TRUE,log.base=1.5,nT
 
   rm(bagged.trees)
 
-  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,nlambda=20,foldid = foldId)
+  model.fit <- cv.glmnet(X,y,intercept=TRUE,standardize=FALSE,alpha=alpha,weights = input.data$w[-struct.int],lambda.min.ratio=1e-9,nlambda=20,foldid = foldId,family="poisson")
   try(plot(model.fit))
 
   # creating predictions
-  fitStruct <- list(input.predict = predict(model.fit,newx=X,s=s)[,1], new.predict = predict(model.fit,newx=X.new,s=s)[,1],nRuns = fitStruct$nRuns+1,cv=approx(model.fit$lambda,model.fit$cvm,c(model.fit$lambda.min,model.fit$lambda.1se))$y)
+  fitStruct <- list(input.predict = predict(model.fit,newx=X,s=s,type="response")[,1], new.predict = predict(model.fit,newx=X.new,s=s,type="response")[,1],nRuns = fitStruct$nRuns+1,cv=approx(model.fit$lambda,model.fit$cvm,c(model.fit$lambda.min,model.fit$lambda.1se))$y)
   class(fitStruct) <- "glmTree"
   print("Optimal x-val value:")
   print(fitStruct$cv)
